@@ -2,6 +2,7 @@
 app.py — Flask REST API for the Product Price Optimiser (live data).
 """
 
+import os
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -37,10 +38,8 @@ def search():
     if not query:
         return jsonify({"error": "Query parameter 'q' is required."}), 400
 
-    # 1. Fetch live products from Amazon + Flipkart
     products = fetch_all_products(query)
 
-    # 2. Optional brand filter
     if brand_filter:
         products = [
             p for p in products
@@ -53,13 +52,10 @@ def search():
             "query": query,
             "total_clusters": 0,
             "clusters": [],
-            "message": "No products found. Try a different search term.",
+            "message": "No products found.",
         })
 
-    # 3. Cluster using fuzzy matching
     clusters: list[ClusterResult] = cluster_products(products)
-
-    # 4. Sort by best price
     reverse = sort == "price_desc"
     clusters.sort(key=lambda c: c["best_price"], reverse=reverse)
 
@@ -71,4 +67,5 @@ def search():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
