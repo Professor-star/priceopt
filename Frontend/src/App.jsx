@@ -6,7 +6,7 @@ import EmptyState from "./components/EmptyState";
 import Loader from "./components/Loader";
 import "./styles/global.css";
 
-const API_BASE = "http://localhost:5000";
+const API_BASE = "https://priceopt-backend.onrender.com";
 
 export default function App() {
   const [query, setQuery]       = useState("");
