@@ -3,3 +3,4 @@ flask-cors==4.0.1
 rapidfuzz==3.9.3
 requests==2.31.0
 beautifulsoup4==4.12.3
+gunicorn==21.2.0
