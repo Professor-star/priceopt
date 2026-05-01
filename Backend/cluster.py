@@ -41,8 +41,12 @@ class ClusterResult(TypedDict):
 def _enrich(product: Product) -> dict:
     """Attach normalised title and brand to a product dict copy."""
     p = dict(product)
-    p["_norm"] = normalize(p["title"])
-    p["_brand"] = extract_brand(p["title"])
+    
+    # Use .get() to avoid KeyError if 'title' is missing
+    title_text = p.get("title", "")
+    
+    p["_norm"] = normalize(title_text)
+    p["_brand"] = extract_brand(title_text)
     return p
 
 
@@ -93,34 +97,37 @@ def _summarise(members: list[dict]) -> ClusterResult:
     Best deal = lowest price; tie-break by highest rating.
     """
     # Choose best deal
-    best = min(members, key=lambda p: (p["price"], -p["rating"]))
+    best = min(members, key=lambda p: (p.get("price", float('inf')), -p.get("rating", 0)))
 
-    # Cluster display name: use the longest (most descriptive) raw title
-    cluster_name = max(members, key=lambda p: len(p["title"]))["title"]
+    # Choose the longest title as the display name for the group
+    best_p = max(members, key=lambda p: len(p.get("title", "")))
+    cluster_name = best_p.get("title", "Unknown Product")
 
     brand = next((p["_brand"] for p in members if p["_brand"]), None)
 
+    # Fixed Indentation here (4 spaces)
     items = [
         {
-            "title": p["title"],
-            "price": p["price"],
-            "platform": p["platform"],
-            "rating": p["rating"],
-            "link": p["link"],
+            "title": p.get("title", "No Title"),
+            "price": p.get("price", 0),
+            "platform": p.get("platform", "Unknown"),
+            "rating": p.get("rating", 0),
+            "link": p.get("link", "#"),
             "is_best_deal": (p is best),
         }
         for p in members
     ]
 
+    # Fixed Indentation here (4 spaces)
     return ClusterResult(
         cluster_name=cluster_name,
         brand=brand,
         items=items,
-        best_platform=best["platform"],
-        best_price=best["price"],
-        best_link=best["link"],
-        best_rating=best["rating"],
-        platforms_available=list({p["platform"] for p in members}),
+        best_platform=best.get("platform", "Unknown"),
+        best_price=best.get("price", 0),
+        best_link=best.get("link", "#"),
+        best_rating=best.get("rating", 0),
+        platforms_available=list({p.get("platform") for p in members if p.get("platform")}),
     )
 
 

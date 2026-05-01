@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import SearchBar from "./components/SearchBar";
 import FilterBar from "./components/FilterBar";
 import ClusterCard from "./components/ClusterCard";
@@ -6,6 +6,7 @@ import EmptyState from "./components/EmptyState";
 import Loader from "./components/Loader";
 import "./styles/global.css";
 
+// ── Point to deployed Render backend ──────────────────────────────────────
 const API_BASE = "https://priceopt-backend.onrender.com";
 
 export default function App() {
@@ -13,14 +14,14 @@ export default function App() {
   const [clusters, setClusters] = useState([]);
   const [loading, setLoading]   = useState(false);
   const [error, setError]       = useState(null);
-  const [meta, setMeta]         = useState(null);   // { query, total_clusters }
+  const [meta, setMeta]         = useState(null);
   const [sort, setSort]         = useState("price_asc");
   const [brand, setBrand]       = useState("");
   const [brands, setBrands]     = useState([]);
   const [searched, setSearched] = useState(false);
 
-  // Fetch available brands on mount
-  useState(() => {
+  // Fetch brand list on mount
+  useEffect(() => {
     fetch(`${API_BASE}/brands`)
       .then((r) => r.json())
       .then(setBrands)
@@ -37,11 +38,15 @@ export default function App() {
       try {
         const params = new URLSearchParams({ q: q.trim(), sort: s });
         if (b) params.set("brand", b);
-        const res  = await fetch(`${API_BASE}/search?${params}`);
+
+        const res = await fetch(`${API_BASE}/search?${params}`);
+
+        if (!res.ok) {
+          const errorData = await res.json().catch(() => ({}));
+          throw new Error(errorData.error || "Server error");
+        }
+
         const data = await res.json();
-
-        if (!res.ok) throw new Error(data.error || "Server error");
-
         setClusters(data.clusters || []);
         setMeta({ query: data.query, total: data.total_clusters });
       } catch (err) {
@@ -102,7 +107,6 @@ export default function App() {
 
       {/* ── Main content ── */}
       <main className="main">
-        {/* Filter bar appears after first search */}
         {searched && !loading && clusters.length > 0 && (
           <FilterBar
             sort={sort}
@@ -134,7 +138,7 @@ export default function App() {
       </main>
 
       <footer className="footer">
-        <span>PriceOpt — academic demo · data is simulated</span>
+        <span>PriceOpt — Avengers Team • Intelligent Price Comparison</span>
       </footer>
     </div>
   );

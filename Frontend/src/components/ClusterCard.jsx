@@ -1,8 +1,11 @@
 import "./ClusterCard.css";
 
+// ── Platform color map — add new platforms here ────────────────────────────
 const PLATFORM_COLOR = {
-  Amazon:  { bg: "#ff9900", text: "#000" },
+  Amazon:   { bg: "#ff9900", text: "#000" },
   Flipkart: { bg: "#2874f0", text: "#fff" },
+  Meesho:   { bg: "#9b2cec", text: "#fff" },
+  Snapdeal: { bg: "#e40000", text: "#fff" },
 };
 
 function PlatformBadge({ platform }) {
@@ -39,7 +42,8 @@ export default function ClusterCard({ cluster, rank }) {
 
   return (
     <div className={`cluster-card ${rank === 0 ? "rank-first" : ""}`}>
-      {/* Card header */}
+
+      {/* ── Card header ── */}
       <div className="card-header">
         {cluster.brand && (
           <span className="brand-tag">{cluster.brand.toUpperCase()}</span>
@@ -49,6 +53,12 @@ export default function ClusterCard({ cluster, rank }) {
           <span className="cluster-count">
             {cluster.items.length} listing{cluster.items.length !== 1 ? "s" : ""}
           </span>
+          {/* Show which platforms have this product */}
+          <span className="platform-pills">
+            {cluster.platforms_available?.map((p) => (
+              <PlatformBadge key={p} platform={p} />
+            ))}
+          </span>
           {savings > 0 && (
             <span className="savings-badge">
               Save up to ₹{savings.toLocaleString("en-IN")}
@@ -57,7 +67,7 @@ export default function ClusterCard({ cluster, rank }) {
         </div>
       </div>
 
-      {/* Price comparison table */}
+      {/* ── Price comparison table ── */}
       <div className="items-table">
         {cluster.items.map((item, i) => (
           <div
@@ -89,7 +99,7 @@ export default function ClusterCard({ cluster, rank }) {
         ))}
       </div>
 
-      {/* Footer summary */}
+      {/* ── Footer summary ── */}
       <div className="card-footer">
         <span className="footer-label">Best price</span>
         <span className="footer-price">
@@ -98,6 +108,7 @@ export default function ClusterCard({ cluster, rank }) {
         <span className="footer-on">on</span>
         <PlatformBadge platform={cluster.best_platform} />
       </div>
+
     </div>
   );
 }
