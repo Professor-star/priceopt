@@ -16,7 +16,7 @@ from typing import TypedDict
 from matcher import normalize, extract_brand, similarity
 
 # Minimum similarity score to join an existing cluster
-SIMILARITY_THRESHOLD = 75
+SIMILARITY_THRESHOLD = 50
 
 
 class Product(TypedDict):

@@ -58,4 +58,4 @@ def similarity(title1: str, title2: str) -> float:
     Uses token_sort_ratio so word order doesn't matter.
     Returns a float in [0, 100].
     """
-    return fuzz.token_sort_ratio(title1, title2)
+    return max(fuzz.token_sort_ratio(title1, title2), fuzz.partial_ratio(title1, title2))
