@@ -1,22 +1,22 @@
 """
-cluster.py — Greedy product clustering using fuzzy similarity.
+cluster.py — Strict cross-platform product matching for PriceOpt.
 
 Algorithm
 ─────────
-1. For each product compute its normalised title and brand.
-2. Iterate products. For each, check existing cluster *representatives*.
-3. If similarity(normalised_product, normalised_rep) >= THRESHOLD
-   AND brands match (or both are None) → assign to that cluster.
-4. Otherwise → start a new cluster.
-5. After clustering, pick the best deal (lowest price, tie-break: rating).
+1. Separate products by platform.
+2. For each Amazon product, find the best matching Snapdeal product
+   using normalised title similarity + brand guard.
+3. Only keep pairs where similarity >= STRICT_THRESHOLD.
+4. Build a clean comparison result with one link per platform.
+5. Single-platform products are discarded (no comparison possible).
 """
 
 from __future__ import annotations
 from typing import TypedDict
 from matcher import normalize, extract_brand, similarity
 
-# Minimum similarity score to join an existing cluster
-SIMILARITY_THRESHOLD = 50
+# Strict threshold — only match if truly similar
+STRICT_THRESHOLD = 55
 
 
 class Product(TypedDict):
@@ -36,117 +36,156 @@ class ClusterResult(TypedDict):
     best_link: str
     best_rating: float
     platforms_available: list[str]
+    amazon_item: dict | None
+    snapdeal_item: dict | None
+    savings: float
+    savings_percent: float
 
 
 def _enrich(product: Product) -> dict:
     """Attach normalised title and brand to a product dict copy."""
     p = dict(product)
-    
-    # Use .get() to avoid KeyError if 'title' is missing
     title_text = p.get("title", "")
-    
     p["_norm"] = normalize(title_text)
     p["_brand"] = extract_brand(title_text)
     return p
 
 
+def _make_item(p: dict) -> dict:
+    """Build a clean item dict for the response."""
+    return {
+        "title":    p.get("title", "No Title"),
+        "price":    p.get("price", 0),
+        "platform": p.get("platform", "Unknown"),
+        "rating":   p.get("rating", 0),
+        "link":     p.get("link", "#"),
+    }
+
+
 def cluster_products(products: list[Product]) -> list[ClusterResult]:
     """
-    Group products into clusters and return cluster summaries.
+    Match Amazon products with Snapdeal products.
+    Returns only cross-platform matched pairs.
     """
     enriched = [_enrich(p) for p in products]
 
-    # Each cluster: {"rep": enriched_product, "members": [enriched_product, ...]}
-    clusters: list[dict] = []
+    amazon   = [p for p in enriched if p.get("platform") == "Amazon"]
+    snapdeal = [p for p in enriched if p.get("platform") == "Snapdeal"]
+    meesho   = [p for p in enriched if p.get("platform") == "Meesho"]
 
-    for product in enriched:
-        placed = False
-        best_score = 0.0
-        best_cluster_idx = -1
+    results: list[ClusterResult] = []
+    used_snapdeal = set()
+    used_meesho   = set()
 
-        # Find the most similar existing cluster
-        for idx, cluster in enumerate(clusters):
-            rep = cluster["rep"]
+    for amz in amazon:
+        best_score   = 0.0
+        best_sd      = None
+        best_sd_idx  = -1
 
-            # Brand guard: skip if brands are known and don't match
+        # Find best matching Snapdeal product
+        for idx, sd in enumerate(snapdeal):
+            if idx in used_snapdeal:
+                continue
+
+            # Brand guard — skip if brands are known and conflict
             if (
-                product["_brand"] is not None
-                and rep["_brand"] is not None
-                and product["_brand"] != rep["_brand"]
+                amz["_brand"] is not None
+                and sd["_brand"] is not None
+                and amz["_brand"] != sd["_brand"]
             ):
                 continue
 
-            score = similarity(product["_norm"], rep["_norm"])
-            if score >= SIMILARITY_THRESHOLD and score > best_score:
-                best_score = score
-                best_cluster_idx = idx
+            score = similarity(amz["_norm"], sd["_norm"])
+            if score >= STRICT_THRESHOLD and score > best_score:
+                best_score  = score
+                best_sd     = sd
+                best_sd_idx = idx
 
-        if best_cluster_idx >= 0:
-            clusters[best_cluster_idx]["members"].append(product)
-            placed = True
+        # Find best matching Meesho product
+        best_mee     = None
+        best_mee_idx = -1
+        best_mee_score = 0.0
 
-        if not placed:
-            clusters.append({"rep": product, "members": [product]})
+        for idx, mee in enumerate(meesho):
+            if idx in used_meesho:
+                continue
 
-    return [_summarise(c["members"]) for c in clusters]
+            if (
+                amz["_brand"] is not None
+                and mee["_brand"] is not None
+                and amz["_brand"] != mee["_brand"]
+            ):
+                continue
 
+            score = similarity(amz["_norm"], mee["_norm"])
+            if score >= STRICT_THRESHOLD and score > best_mee_score:
+                best_mee_score = score
+                best_mee       = mee
+                best_mee_idx   = idx
 
-def _summarise(members: list[dict]) -> ClusterResult:
-    """
-    Build a ClusterResult from a list of cluster members.
-    Best deal = lowest price; tie-break by highest rating.
-    """
-    # Choose best deal
-    best = min(members, key=lambda p: (p.get("price", float('inf')), -p.get("rating", 0)))
+        # Only create a cluster if we matched at least one other platform
+        if best_sd is None and best_mee is None:
+            continue
 
-    # Choose the longest title as the display name for the group
-    best_p = max(members, key=lambda p: len(p.get("title", "")))
-    cluster_name = best_p.get("title", "Unknown Product")
+        used_snapdeal.add(best_sd_idx) if best_sd_idx >= 0 else None
+        used_meesho.add(best_mee_idx)  if best_mee_idx >= 0 else None
 
-    brand = next((p["_brand"] for p in members if p["_brand"]), None)
+        # Build items list — Amazon first, then Snapdeal, then Meesho
+        items = [_make_item(amz)]
+        if best_sd:
+            items.append(_make_item(best_sd))
+        if best_mee:
+            items.append(_make_item(best_mee))
 
-    # Fixed Indentation here (4 spaces)
-    items = [
-        {
-            "title": p.get("title", "No Title"),
-            "price": p.get("price", 0),
-            "platform": p.get("platform", "Unknown"),
-            "rating": p.get("rating", 0),
-            "link": p.get("link", "#"),
-            "is_best_deal": (p is best),
-        }
-        for p in members
-    ]
+        # Find best deal (lowest price)
+        best = min(items, key=lambda x: x.get("price", float("inf")))
+        worst = max(items, key=lambda x: x.get("price", float("inf")))
 
-    # Fixed Indentation here (4 spaces)
-    return ClusterResult(
-        cluster_name=cluster_name,
-        brand=brand,
-        items=items,
-        best_platform=best.get("platform", "Unknown"),
-        best_price=best.get("price", 0),
-        best_link=best.get("link", "#"),
-        best_rating=best.get("rating", 0),
-        platforms_available=list({p.get("platform") for p in members if p.get("platform")}),
-    )
+        savings = worst.get("price", 0) - best.get("price", 0)
+        savings_pct = round((savings / worst["price"]) * 100) if worst.get("price", 0) > 0 else 0
+
+        # Mark best deal in items
+        for item in items:
+            item["is_best_deal"] = (item is best)
+
+        # Use Amazon title as cluster name (usually more detailed)
+        cluster_name = amz.get("title", "Unknown Product")
+        brand = amz.get("_brand") or (best_sd.get("_brand") if best_sd else None)
+
+        platforms = [i["platform"] for i in items]
+
+        results.append(ClusterResult(
+            cluster_name      = cluster_name,
+            brand             = brand,
+            items             = items,
+            best_platform     = best.get("platform", "Unknown"),
+            best_price        = best.get("price", 0),
+            best_link         = best.get("link", "#"),
+            best_rating       = best.get("rating", 0),
+            platforms_available = platforms,
+            amazon_item       = _make_item(amz),
+            snapdeal_item     = _make_item(best_sd) if best_sd else None,
+            savings           = round(savings, 2),
+            savings_percent   = savings_pct,
+        ))
+
+    return results
 
 
 def filter_by_query(products: list[Product], query: str) -> list[Product]:
     """
     Return products whose normalised title contains at least one token
-    from the normalised query.  Handles both specific and category queries.
+    from the normalised query.
     """
-    norm_query = normalize(query)
+    norm_query   = normalize(query)
     query_tokens = set(norm_query.split())
 
     if not query_tokens:
-        return products  # empty query → return all
+        return products
 
     def matches(p: Product) -> bool:
-        norm_title = normalize(p["title"])
-        # Accept if any query token appears in the title
+        norm_title = normalize(p.get("title", ""))
         return any(token in norm_title for token in query_tokens)
 
     filtered = [p for p in products if matches(p)]
-    # Fall back to all products if nothing matched (broad search)
     return filtered if filtered else products
