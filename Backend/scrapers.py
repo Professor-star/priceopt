@@ -99,7 +99,8 @@ def get_snapdeal_data(query: str, max_results: int = 5) -> list[dict]:
 
                 price_tag = item.find("span", {"class": "product-price"})
                 price_text = price_tag.get_text(strip=True) if price_tag else "0"
-                price = float("".join(filter(lambda c: c.isdigit() or c == ".", price_text)) or 0)
+                price_clean = "".join(filter(lambda c: c.isdigit(), price_text))
+                price = float(price_clean) if price_clean else 0.0
                 if price <= 0:
                     continue
 
