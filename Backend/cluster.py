@@ -1,6 +1,6 @@
 from matcher import similarity, normalize, extract_brand
 
-SIMILARITY_THRESHOLD = 60  # Match products with 60% similarity or higher
+SIMILARITY_THRESHOLD = 50  # Lowered from 60 to 50 for better cross-platform matching
 
 def cluster_products(products: list[dict]) -> list[dict]:
     """
@@ -32,8 +32,8 @@ def cluster_products(products: list[dict]) -> list[dict]:
         return []
     
     clusters = []
-    used_snapdeal = set()  # Track which Snapdeal products have been matched
-    used_meesho = set()    # Track which Meesho products have been matched
+    used_snapdeal = set()
+    used_meesho = set()
     
     # Main loop: iterate through Amazon products (primary source)
     for idx, amazon_item in enumerate(amazon_products):
@@ -46,60 +46,68 @@ def cluster_products(products: list[dict]) -> list[dict]:
             amazon_normalized = normalize(amazon_title)
             amazon_brand = extract_brand(amazon_title)
             
-            print(f"[Cluster DEBUG] Processing Amazon product {idx}: {amazon_title[:50]}...")
+            print(f"[Cluster DEBUG] Processing Amazon #{idx}: '{amazon_title[:60]}...'")
+            print(f"[Cluster DEBUG]   Normalized: '{amazon_normalized}'")
             
             # Find best matching Snapdeal product
             snapdeal_match = None
             best_snapdeal_score = 0
             best_snapdeal_idx = -1
             
-            for sd_idx, snapdeal_item in enumerate(snapdeal_products):
-                if sd_idx in used_snapdeal:
-                    continue
+            if snapdeal_products:
+                print(f"[Cluster DEBUG]   Searching {len(snapdeal_products)} Snapdeal products...")
+                for sd_idx, snapdeal_item in enumerate(snapdeal_products):
+                    if sd_idx in used_snapdeal:
+                        continue
+                    
+                    snapdeal_title = snapdeal_item.get("title", "")
+                    snapdeal_normalized = normalize(snapdeal_title)
+                    score = similarity(amazon_normalized, snapdeal_normalized)
+                    
+                    if score > best_snapdeal_score:
+                        best_snapdeal_score = score
+                        snapdeal_match = snapdeal_item
+                        best_snapdeal_idx = sd_idx
+                        print(f"[Cluster DEBUG]     New best match: score={score:.1f}% - '{snapdeal_title[:50]}...'")
                 
-                snapdeal_title = snapdeal_item.get("title", "")
-                snapdeal_normalized = normalize(snapdeal_title)
-                score = similarity(amazon_normalized, snapdeal_normalized)
-                
-                if score > best_snapdeal_score:
-                    best_snapdeal_score = score
-                    snapdeal_match = snapdeal_item
-                    best_snapdeal_idx = sd_idx
-            
-            # Only use Snapdeal match if similarity is high enough
-            if best_snapdeal_score < SIMILARITY_THRESHOLD:
-                snapdeal_match = None
-                best_snapdeal_idx = -1
-                print(f"[Cluster DEBUG] No Snapdeal match (best score: {best_snapdeal_score})")
+                if best_snapdeal_score >= SIMILARITY_THRESHOLD:
+                    used_snapdeal.add(best_snapdeal_idx)
+                    print(f"[Cluster DEBUG]   ✓ Snapdeal match accepted (score: {best_snapdeal_score:.1f}%)")
+                else:
+                    snapdeal_match = None
+                    print(f"[Cluster DEBUG]   ✗ Snapdeal best match below threshold (score: {best_snapdeal_score:.1f}% < {SIMILARITY_THRESHOLD}%)")
             else:
-                used_snapdeal.add(best_snapdeal_idx)
-                print(f"[Cluster DEBUG] Found Snapdeal match with score {best_snapdeal_score}")
+                print(f"[Cluster DEBUG]   No Snapdeal products available")
             
             # Find best matching Meesho product
             meesho_match = None
             best_meesho_score = 0
             best_meesho_idx = -1
             
-            for m_idx, meesho_item in enumerate(meesho_products):
-                if m_idx in used_meesho:
-                    continue
+            if meesho_products:
+                print(f"[Cluster DEBUG]   Searching {len(meesho_products)} Meesho products...")
+                for m_idx, meesho_item in enumerate(meesho_products):
+                    if m_idx in used_meesho:
+                        continue
+                    
+                    meesho_title = meesho_item.get("title", "")
+                    meesho_normalized = normalize(meesho_title)
+                    score = similarity(amazon_normalized, meesho_normalized)
+                    
+                    if score > best_meesho_score:
+                        best_meesho_score = score
+                        meesho_match = meesho_item
+                        best_meesho_idx = m_idx
+                        print(f"[Cluster DEBUG]     New best match: score={score:.1f}% - '{meesho_title[:50]}...'")
                 
-                meesho_title = meesho_item.get("title", "")
-                meesho_normalized = normalize(meesho_title)
-                score = similarity(amazon_normalized, meesho_normalized)
-                
-                if score > best_meesho_score:
-                    best_meesho_score = score
-                    meesho_match = meesho_item
-                    best_meesho_idx = m_idx
-            
-            if best_meesho_score < SIMILARITY_THRESHOLD:
-                meesho_match = None
-                best_meesho_idx = -1
-                print(f"[Cluster DEBUG] No Meesho match (best score: {best_meesho_score})")
+                if best_meesho_score >= SIMILARITY_THRESHOLD:
+                    used_meesho.add(best_meesho_idx)
+                    print(f"[Cluster DEBUG]   ✓ Meesho match accepted (score: {best_meesho_score:.1f}%)")
+                else:
+                    meesho_match = None
+                    print(f"[Cluster DEBUG]   ✗ Meesho best match below threshold (score: {best_meesho_score:.1f}% < {SIMILARITY_THRESHOLD}%)")
             else:
-                used_meesho.add(best_meesho_idx)
-                print(f"[Cluster DEBUG] Found Meesho match with score {best_meesho_score}")
+                print(f"[Cluster DEBUG]   No Meesho products available")
             
             # Build the cluster
             cluster = build_cluster(
@@ -113,7 +121,7 @@ def cluster_products(products: list[dict]) -> list[dict]:
             )
             
             clusters.append(cluster)
-            print(f"[Cluster DEBUG] Created cluster {len(clusters)}")
+            print(f"[Cluster DEBUG] ✓ Cluster created (total clusters so far: {len(clusters)})\n")
             
         except Exception as e:
             print(f"[Cluster ERROR] Error processing Amazon product {idx}: {e}")
@@ -122,6 +130,8 @@ def cluster_products(products: list[dict]) -> list[dict]:
             continue
     
     print(f"[Cluster] SUCCESS: Created {len(clusters)} clusters from {len(amazon_products)} Amazon products")
+    print(f"[Cluster] Snapdeal: {len(used_snapdeal)} products matched")
+    print(f"[Cluster] Meesho: {len(used_meesho)} products matched")
     return clusters
 
 
