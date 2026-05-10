@@ -13,7 +13,10 @@ def cluster_products(products: list[dict]) -> list[dict]:
     4. Calculate best price and savings across platforms
     """
     
+    print(f"[Cluster DEBUG] cluster_products() called with {len(products)} total products")
+    
     if not products:
+        print("[Cluster] No products provided to cluster")
         return []
     
     # Separate products by platform
@@ -21,9 +24,11 @@ def cluster_products(products: list[dict]) -> list[dict]:
     snapdeal_products = [p for p in products if p.get("platform") == "Snapdeal"]
     meesho_products = [p for p in products if p.get("platform") == "Meesho"]
     
+    print(f"[Cluster DEBUG] Platform breakdown: Amazon={len(amazon_products)}, Snapdeal={len(snapdeal_products)}, Meesho={len(meesho_products)}")
+    
     # If no Amazon products, we can't cluster (Amazon is primary)
     if not amazon_products:
-        print("[Cluster] Warning: No Amazon products found, returning empty clusters")
+        print("[Cluster] WARNING: No Amazon products found, returning empty clusters")
         return []
     
     clusters = []
@@ -31,74 +36,92 @@ def cluster_products(products: list[dict]) -> list[dict]:
     used_meesho = set()    # Track which Meesho products have been matched
     
     # Main loop: iterate through Amazon products (primary source)
-    for amazon_item in amazon_products:
-        amazon_title = amazon_item.get("title", "")
-        amazon_normalized = normalize(amazon_title)
-        amazon_brand = extract_brand(amazon_title)
-        
-        # Find best matching Snapdeal product
-        snapdeal_match = None
-        best_snapdeal_score = 0
-        best_snapdeal_idx = -1
-        
-        for idx, snapdeal_item in enumerate(snapdeal_products):
-            if idx in used_snapdeal:
+    for idx, amazon_item in enumerate(amazon_products):
+        try:
+            amazon_title = amazon_item.get("title", "")
+            if not amazon_title:
+                print(f"[Cluster DEBUG] Amazon item {idx} has no title, skipping")
                 continue
             
-            snapdeal_title = snapdeal_item.get("title", "")
-            snapdeal_normalized = normalize(snapdeal_title)
-            score = similarity(amazon_normalized, snapdeal_normalized)
+            amazon_normalized = normalize(amazon_title)
+            amazon_brand = extract_brand(amazon_title)
             
-            if score > best_snapdeal_score:
-                best_snapdeal_score = score
-                snapdeal_match = snapdeal_item
-                best_snapdeal_idx = idx
-        
-        # Only use Snapdeal match if similarity is high enough
-        if best_snapdeal_score < SIMILARITY_THRESHOLD:
+            print(f"[Cluster DEBUG] Processing Amazon product {idx}: {amazon_title[:50]}...")
+            
+            # Find best matching Snapdeal product
             snapdeal_match = None
+            best_snapdeal_score = 0
             best_snapdeal_idx = -1
-        else:
-            used_snapdeal.add(best_snapdeal_idx)
-        
-        # Find best matching Meesho product (optional, for future enhancement)
-        meesho_match = None
-        best_meesho_score = 0
-        best_meesho_idx = -1
-        
-        for idx, meesho_item in enumerate(meesho_products):
-            if idx in used_meesho:
-                continue
             
-            meesho_title = meesho_item.get("title", "")
-            meesho_normalized = normalize(meesho_title)
-            score = similarity(amazon_normalized, meesho_normalized)
+            for sd_idx, snapdeal_item in enumerate(snapdeal_products):
+                if sd_idx in used_snapdeal:
+                    continue
+                
+                snapdeal_title = snapdeal_item.get("title", "")
+                snapdeal_normalized = normalize(snapdeal_title)
+                score = similarity(amazon_normalized, snapdeal_normalized)
+                
+                if score > best_snapdeal_score:
+                    best_snapdeal_score = score
+                    snapdeal_match = snapdeal_item
+                    best_snapdeal_idx = sd_idx
             
-            if score > best_meesho_score:
-                best_meesho_score = score
-                meesho_match = meesho_item
-                best_meesho_idx = idx
-        
-        if best_meesho_score < SIMILARITY_THRESHOLD:
+            # Only use Snapdeal match if similarity is high enough
+            if best_snapdeal_score < SIMILARITY_THRESHOLD:
+                snapdeal_match = None
+                best_snapdeal_idx = -1
+                print(f"[Cluster DEBUG] No Snapdeal match (best score: {best_snapdeal_score})")
+            else:
+                used_snapdeal.add(best_snapdeal_idx)
+                print(f"[Cluster DEBUG] Found Snapdeal match with score {best_snapdeal_score}")
+            
+            # Find best matching Meesho product
             meesho_match = None
+            best_meesho_score = 0
             best_meesho_idx = -1
-        else:
-            used_meesho.add(best_meesho_idx)
-        
-        # Build the cluster
-        cluster = build_cluster(
-            amazon_item=amazon_item,
-            snapdeal_item=snapdeal_match,
-            meesho_item=meesho_match,
-            amazon_normalized=amazon_normalized,
-            snapdeal_score=best_snapdeal_score,
-            meesho_score=best_meesho_score,
-            brand=amazon_brand
-        )
-        
-        clusters.append(cluster)
+            
+            for m_idx, meesho_item in enumerate(meesho_products):
+                if m_idx in used_meesho:
+                    continue
+                
+                meesho_title = meesho_item.get("title", "")
+                meesho_normalized = normalize(meesho_title)
+                score = similarity(amazon_normalized, meesho_normalized)
+                
+                if score > best_meesho_score:
+                    best_meesho_score = score
+                    meesho_match = meesho_item
+                    best_meesho_idx = m_idx
+            
+            if best_meesho_score < SIMILARITY_THRESHOLD:
+                meesho_match = None
+                best_meesho_idx = -1
+                print(f"[Cluster DEBUG] No Meesho match (best score: {best_meesho_score})")
+            else:
+                used_meesho.add(best_meesho_idx)
+                print(f"[Cluster DEBUG] Found Meesho match with score {best_meesho_score}")
+            
+            # Build the cluster
+            cluster = build_cluster(
+                amazon_item=amazon_item,
+                snapdeal_item=snapdeal_match,
+                meesho_item=meesho_match,
+                amazon_normalized=amazon_normalized,
+                snapdeal_score=best_snapdeal_score,
+                meesho_score=best_meesho_score,
+                brand=amazon_brand
+            )
+            
+            clusters.append(cluster)
+            print(f"[Cluster DEBUG] Created cluster {len(clusters)}")
+            
+        except Exception as e:
+            print(f"[Cluster ERROR] Error processing Amazon product {idx}: {e}")
+            import traceback
+            traceback.print_exc()
+            continue
     
-    print(f"[Cluster] Created {len(clusters)} clusters from {len(amazon_products)} Amazon products")
+    print(f"[Cluster] SUCCESS: Created {len(clusters)} clusters from {len(amazon_products)} Amazon products")
     return clusters
 
 
@@ -144,7 +167,6 @@ def build_cluster(
         savings_percent = round((savings / amazon_price) * 100, 1)
     
     # Generate cluster name from Amazon product title
-    # (Just use the title, optionally shorten if too long)
     amazon_title = amazon_item.get("title", "Product")
     cluster_name = amazon_title[:100] if len(amazon_title) > 100 else amazon_title
     
